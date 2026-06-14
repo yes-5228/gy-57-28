@@ -20,4 +20,5 @@ export const appointmentApi = {
   list: () => api.get('/appointments'),
   create: (payload) => api.post('/appointments', payload),
   cancel: (id, reason) => api.post(`/appointments/${id}/cancel`, { reason }),
+  reschedule: (id, payload) => api.post(`/appointments/${id}/reschedule`, payload),
 }

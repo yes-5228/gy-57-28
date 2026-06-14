@@ -58,11 +58,27 @@
           </thead>
           <tbody>
             <tr v-for="item in appointments" :key="item.id">
-              <td>{{ formatDateTime(item.start_time) }} - {{ formatDateTime(item.end_time) }}</td>
+              <td>
+                <div>{{ formatDateTime(item.start_time) }} - {{ formatDateTime(item.end_time) }}</div>
+                <div v-if="item.reschedule_reason" class="reschedule-info">
+                  改约原因：{{ item.reschedule_reason }}
+                  <span v-if="item.rescheduled_from_id" class="reschedule-history">（由 #{{ item.rescheduled_from_id }} 改约）</span>
+                  <span v-if="item.rescheduled_to_id" class="reschedule-history">（已改约至 #{{ item.rescheduled_to_id }}）</span>
+                </div>
+              </td>
               <td>{{ item.student_name }}</td>
               <td>{{ item.coach_name }}</td>
               <td><StatusBadge :status="item.status" /></td>
               <td>
+                <button
+                  class="ghost"
+                  :disabled="item.status !== 'booked'"
+                  @click="openRescheduleModal(item)"
+                  style="margin-right: 8px;"
+                >
+                  <CalendarClock :size="16" />
+                  改约
+                </button>
                 <button
                   class="ghost danger"
                   :disabled="item.status !== 'booked'"
@@ -77,12 +93,45 @@
         </table>
       </section>
     </div>
+
+    <div v-if="rescheduleModalVisible" class="modal-overlay" @click.self="closeRescheduleModal">
+      <div class="modal">
+        <h3>改约 - {{ currentAppointment?.student_name }}</h3>
+        <form class="modal-form" @submit.prevent="submitReschedule">
+          <div class="reschedule-info">
+            原时间：{{ formatDateTime(currentAppointment?.start_time) }} - {{ formatDateTime(currentAppointment?.end_time) }}
+          </div>
+          <label>
+            新开始时间
+            <input v-model="rescheduleForm.start_time" type="datetime-local" required />
+          </label>
+          <label>
+            新结束时间
+            <input v-model="rescheduleForm.end_time" type="datetime-local" required />
+          </label>
+          <label>
+            改约原因
+            <input v-model="rescheduleForm.reason" type="text" placeholder="请输入改约原因" required />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="ghost secondary" @click="closeRescheduleModal">
+              取消
+            </button>
+            <button type="submit" class="primary">
+              <CalendarCheck :size="18" />
+              确认改约
+            </button>
+          </div>
+          <p v-if="rescheduleMessage" class="message">{{ rescheduleMessage }}</p>
+        </form>
+      </div>
+    </div>
   </section>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { CalendarCheck, XCircle } from 'lucide-vue-next'
+import { CalendarCheck, CalendarClock, XCircle } from 'lucide-vue-next'
 import EmptyState from '../components/EmptyState.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { appointmentApi } from '../api/modules'
@@ -113,6 +162,15 @@ const form = reactive({
   coach_id: '',
   start_time: toLocalInputValue(initialStart),
   end_time: toLocalInputValue(addHours(initialStart, 2)),
+})
+
+const rescheduleModalVisible = ref(false)
+const currentAppointment = ref(null)
+const rescheduleMessage = ref('')
+const rescheduleForm = reactive({
+  start_time: '',
+  end_time: '',
+  reason: '管理员改约',
 })
 
 const activeCoaches = computed(() => props.coaches.filter((coach) => coach.active))
@@ -146,6 +204,39 @@ async function cancel(id) {
     emit('changed')
   } catch (error) {
     message.value = error.message
+  }
+}
+
+function openRescheduleModal(appointment) {
+  currentAppointment.value = appointment
+  const newStart = addHours(new Date(), 24)
+  rescheduleForm.start_time = toLocalInputValue(newStart)
+  rescheduleForm.end_time = toLocalInputValue(addHours(newStart, 2))
+  rescheduleForm.reason = '管理员改约'
+  rescheduleMessage.value = ''
+  rescheduleModalVisible.value = true
+}
+
+function closeRescheduleModal() {
+  rescheduleModalVisible.value = false
+  currentAppointment.value = null
+  rescheduleMessage.value = ''
+}
+
+async function submitReschedule() {
+  rescheduleMessage.value = ''
+  try {
+    await appointmentApi.reschedule(currentAppointment.value.id, {
+      start_time: new Date(rescheduleForm.start_time).toISOString(),
+      end_time: new Date(rescheduleForm.end_time).toISOString(),
+      reason: rescheduleForm.reason,
+    })
+    rescheduleMessage.value = '改约成功'
+    await load()
+    emit('changed')
+    setTimeout(closeRescheduleModal, 800)
+  } catch (error) {
+    rescheduleMessage.value = error.message
   }
 }
 

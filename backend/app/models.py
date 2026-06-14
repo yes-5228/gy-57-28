@@ -7,6 +7,7 @@ class AppointmentStatus(str, Enum):
     booked = "booked"
     cancelled = "cancelled"
     completed = "completed"
+    rescheduled = "rescheduled"
 
 
 class Student(BaseModel):
@@ -35,6 +36,10 @@ class Appointment(BaseModel):
     created_at: datetime
     cancelled_at: datetime | None = None
     cancel_reason: str | None = None
+    rescheduled_from_id: int | None = None
+    rescheduled_to_id: int | None = None
+    reschedule_reason: str | None = None
+    rescheduled_at: datetime | None = None
 
 
 class CancelRule(BaseModel):

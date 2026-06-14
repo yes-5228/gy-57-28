@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import HTTPException, status
 
 from app.models import Appointment, AppointmentStatus
-from app.schemas import AppointmentCreate, AppointmentRead
+from app.schemas import AppointmentCreate, AppointmentRead, AppointmentReschedule
 from app.store import appointments, cancel_rule, coaches, next_id, students
 
 
@@ -22,6 +22,10 @@ def appointment_to_read(appointment: Appointment) -> AppointmentRead:
         created_at=appointment.created_at,
         cancelled_at=appointment.cancelled_at,
         cancel_reason=appointment.cancel_reason,
+        rescheduled_from_id=appointment.rescheduled_from_id,
+        rescheduled_to_id=appointment.rescheduled_to_id,
+        reschedule_reason=appointment.reschedule_reason,
+        rescheduled_at=appointment.rescheduled_at,
     )
 
 
@@ -104,3 +108,54 @@ def cancel_appointment(appointment_id: int, reason: str) -> AppointmentRead:
     appointment.cancel_reason = reason
     appointments[appointment.id] = appointment
     return appointment_to_read(appointment)
+
+
+def reschedule_appointment(appointment_id: int, payload: AppointmentReschedule) -> AppointmentRead:
+    old_appointment = appointments.get(appointment_id)
+    if not old_appointment:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Appointment not found")
+    if old_appointment.status != AppointmentStatus.booked:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only booked appointments can be rescheduled")
+
+    start_time = _as_naive(payload.start_time)
+    end_time = _as_naive(payload.end_time)
+
+    if start_time <= datetime.now():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot reschedule to a past time slot")
+
+    has_conflict = any(
+        item.status == AppointmentStatus.booked
+        and item.id != old_appointment.id
+        and item.coach_id == old_appointment.coach_id
+        and start_time < item.end_time
+        and end_time > item.start_time
+        for item in appointments.values()
+    )
+    if has_conflict:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Coach already has a booking in this time slot")
+
+    rescheduled_at = datetime.now()
+
+    old_appointment.status = AppointmentStatus.rescheduled
+    old_appointment.reschedule_reason = payload.reason
+    old_appointment.rescheduled_at = rescheduled_at
+
+    new_appointment = Appointment(
+        id=next_id("appointment"),
+        student_id=old_appointment.student_id,
+        coach_id=old_appointment.coach_id,
+        start_time=start_time,
+        end_time=end_time,
+        status=AppointmentStatus.booked,
+        created_at=datetime.now(),
+        rescheduled_from_id=old_appointment.id,
+        reschedule_reason=payload.reason,
+        rescheduled_at=rescheduled_at,
+    )
+
+    old_appointment.rescheduled_to_id = new_appointment.id
+
+    appointments[old_appointment.id] = old_appointment
+    appointments[new_appointment.id] = new_appointment
+
+    return appointment_to_read(new_appointment)

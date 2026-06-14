@@ -14,5 +14,6 @@ const labels = {
   booked: '已预约',
   cancelled: '已取消',
   completed: '已完成',
+  rescheduled: '已改约',
 }
 </script>

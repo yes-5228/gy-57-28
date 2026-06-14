@@ -53,10 +53,28 @@ class AppointmentRead(BaseModel):
     created_at: datetime
     cancelled_at: datetime | None = None
     cancel_reason: str | None = None
+    rescheduled_from_id: int | None = None
+    rescheduled_to_id: int | None = None
+    reschedule_reason: str | None = None
+    rescheduled_at: datetime | None = None
 
 
 class AppointmentCancel(BaseModel):
     reason: str = Field(default="学员主动取消", min_length=2, max_length=100)
+
+
+class AppointmentReschedule(BaseModel):
+    start_time: datetime
+    end_time: datetime
+    reason: str = Field(default="管理员改约", min_length=2, max_length=100)
+
+    @field_validator("end_time")
+    @classmethod
+    def end_after_start(cls, value: datetime, info):
+        start_time = info.data.get("start_time")
+        if start_time and value <= start_time:
+            raise ValueError("end_time must be later than start_time")
+        return value
 
 
 class LessonStats(BaseModel):
